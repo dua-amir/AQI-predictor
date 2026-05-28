@@ -29,18 +29,34 @@ for i in range(0, 24, 8):
         item = forecast_list[i]
         dt_txt = item.get("dt_txt") 
         
+        temp_val = item["main"]["temp"]
+        wind_val = item["wind"]["speed"]
+        
+        # FIX 1: Afternoon peak heatwave ko model ke liye simulate karna (Asal temperature peak target)
+        simulated_max_temp = temp_val + 6.0 if i in [8, 16] else temp_val + 1.5
+
         weather_data = {
             "city": CITY,
-            "temperature": item["main"]["temp"],
+            "temperature": temp_val,
+            "max_temperature": simulated_max_temp,  # <-- Naya Feature 1
             "humidity": item["main"]["humidity"],
-            "wind_speed": item["wind"]["speed"],
+            "wind_speed": wind_val,
             "visibility": item.get("visibility", 10000),
             "timestamp": item.get("dt"),
             "forecast_date": dt_txt.split(" ")[0]
         }
         
-        # Simulated target index configuration
-        weather_data["aqi_target"] = int((weather_data["humidity"] * 1.5) - (weather_data["visibility"] / 200) + 50)
+        # FIX 2: Stagnation Index (Heat waves traps pollution when wind drops)
+        weather_data["stagnation_index"] = simulated_max_temp / (wind_val + 0.1)  # <-- Naya Feature 2
+        
+        # FIX 3: Target formula scaling based on Heatwave and Stagnation Factor
+        weather_data["aqi_target"] = int(
+            (weather_data["humidity"] * 1.1) - 
+            (weather_data["visibility"] / 250) + 
+            (weather_data["max_temperature"] * 2.2) + 
+            (weather_data["stagnation_index"] * 1.6)
+        )
+        weather_data["aqi_target"] = max(10, min(500, weather_data["aqi_target"]))
         rows.append(weather_data)
 
 df = pd.DataFrame(rows)
@@ -50,13 +66,14 @@ print("Connecting to Hopsworks Cloud...")
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store()
 
+# Version updated to 3 for new schema mapping
 weather_fg = fs.get_or_create_feature_group(
     name="weather_aqi_fg",
-    version=2,
+    version=3,
     primary_key=['timestamp'],
-    description="3-Day Future Weather Data blocks with Date indexing"
+    description="3-Day Future Weather Data blocks with Stagnation and Max Temp Features"
 )
 
 print(f"Inserting forecast rows into Feature Store...")
 weather_fg.insert(df)
-print("Feature Store updated successfully!")
+print("Feature Store Version 3 updated successfully!")
