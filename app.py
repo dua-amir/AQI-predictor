@@ -22,31 +22,35 @@ HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
 CITY = "Islamabad"
 
 @st.cache_resource
-def load_best_model():
+def load_best_model_with_meta():
     try:
         project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
         mr = project.get_model_registry()
         
-        # FIX 1: Hum model registry se latest version automatically pull kar rahay hain dynamically
         model_list = mr.get_models("aqi_prediction_model")
         if model_list:
-            # Sort by version to get highest/latest model artifact
+            # Get latest available cloud execution matrix
             latest_model_meta = sorted(model_list, key=lambda m: m.version)[-1]
-            st.sidebar.info(f"Cloud Model Version Active: {latest_model_meta.version}")
             model_dir = latest_model_meta.download()
-            return joblib.load(os.path.join(model_dir, "model.pkl"))
+            loaded_model = joblib.load(os.path.join(model_dir, "model.pkl"))
+            
+            # Fetch dynamic algorithm descriptions safely
+            algo_description = getattr(latest_model_meta, 'description', "Active ML Engine")
+            return loaded_model, algo_description, latest_model_meta.version
         
-        raise Exception("Registry query sequence matching failed.")
+        raise Exception("Registry lookup sync drop.")
     except Exception as e:
         if os.path.exists("saved_model/model.pkl"):
-            st.sidebar.warning("Using local cache model buffer")
-            return joblib.load("saved_model/model.pkl")
-        return None
+            return joblib.load("saved_model/model.pkl"), "Fallback Engine Active", "Local-Cache"
+        return None, None, None
 
-model = load_best_model()
+model, model_desc, model_version = load_best_model_with_meta()
 
 if model is not None:
-    st.sidebar.success("Heatwave Model Activated")
+    # FIX 3: Dynamic title tracking based on actual active model meta string descriptions
+    cleaned_title = "-- " + model_desc.split("|")[-1].strip() if "|" in str(model_desc) else f"Model Engine v{model_version} Active"
+    st.sidebar.success(cleaned_title)
+    st.sidebar.info(f"Model Registry Version: {model_version}")
     
     st.markdown("### Next 3-Days Automated Air Quality Insights")
     
@@ -57,24 +61,25 @@ if model is not None:
         if "list" in res:
             tab1, tab2, tab3 = st.tabs(["Tomorrow", "Day 2", "Day 3"])
             tabs = [tab1, tab2, tab3]
-            indices = [8, 16, 24] # ~24h, ~48h, ~72h offsets
+            indices = [8, 16, 24] 
             
             for idx, tab in zip(indices, tabs):
                 item = res["list"][idx]
                 t = item["main"]["temp"]
                 h = item["main"]["humidity"]
-                w = item["wind"]["speed"]
+                raw_w = item["wind"]["speed"]
                 v = item.get("visibility", 10000)
                 date_str = item["dt_txt"].split(" ")[0]
                 
-                # Dynamic calculations matching training setup
-                simulated_max_temp = t + 6.0 if idx in [8, 16] else t + 1.5
-                stagnation_idx = simulated_max_temp / (w + 0.1)
+                # FIX 1: Unit align convert to km/h inside front-end dataframe pipeline
+                w_kmh = raw_w * 3.6
                 
-                # FIX 2: Features order exactly train_pipeline matching column set
-                # columns placement sequential integrity check
+                simulated_max_temp = t + 6.5 if idx in [8, 16] else t + 2.0
+                stagnation_idx = simulated_max_temp / (w_kmh + 0.1)
+                
+                # Ordered exact feature matching vector sequence mapping
                 input_df = pd.DataFrame(
-                    [[t, simulated_max_temp, h, w, v, stagnation_idx]], 
+                    [[t, simulated_max_temp, h, w_kmh, v, stagnation_idx]], 
                     columns=['temperature', 'max_temperature', 'humidity', 'wind_speed', 'visibility', 'stagnation_index']
                 )
                 
@@ -82,15 +87,17 @@ if model is not None:
                 
                 with tab:
                     st.markdown(f"#### Forecast Target Date: **{date_str}**")
-                    st.write(f"🔹 **Expected Metrics:** Temp: `{t}°C` | Max Temp: `{simulated_max_temp:.1f}°C` | Humidity: `{h}%` | Wind: `{w} m/s`")
+                    st.write(f"🔹 **Expected Metrics:** Temp: `{t}°C` | Max Temp: `{simulated_max_temp:.1f}°C` | Humidity: `{h}%` | Wind: `{w_kmh:.1f} km/h`")
                     st.metric(label="Calculated Future AQI", value=f"{pred_aqi}")
                     
-                    if pred_aqi <= 100:
-                        st.success("**Good / Moderate:** Ambient air quality is clear and optimal.")
-                    elif pred_aqi <= 200:
-                        st.warning("**Unhealthy Warning:** Heatwave parameters triggering smog buildup. Precaution advised.")
+                    if pred_aqi <= 50:
+                        st.success("**Good:** Air quality is satisfactory, and air pollution poses little or no risk.")
+                    elif pred_aqi <= 100:
+                        st.info("**Moderate:** Air quality is acceptable; however, some pollutants might cause minor health concerns.")
+                    elif pred_aqi <= 150:
+                        st.warning("**Unhealthy for Sensitive Groups:** Members of sensitive groups may experience health effects.")
                     else:
-                        st.error("**Hazardous Level:** Elevated pollutant vectors trapped due to atmospheric stagnation.")
+                        st.error("**Hazardous Level:** Critical air inversion threshold crossed. Smog alert parameters active.")
         else:
             st.error("Failed to parse forecast data timeline segments from OpenWeather API.")
 
@@ -100,10 +107,9 @@ if model is not None:
     s_temp = st.slider("Testing Base Temperature (°C)", 0.0, 50.0, 25.0)
     s_max_temp = st.slider("Testing Peak Max Temperature (°C)", 0.0, 55.0, 32.0)
     s_humidity = st.slider("Testing Humidity (%)", 5, 100, 45)
-    s_wind = st.slider("Testing Wind Speed (m/s)", 0.0, 20.0, 4.0)
+    s_wind = st.slider("Testing Wind Speed (km/h)", 0.0, 70.0, 15.0)
     s_visibility = st.slider("Testing Visibility (m)", 1000, 10000, 8000)
     
-    # Custom interaction scaling for sandbox inputs
     s_stagnation = s_max_temp / (s_wind + 0.1)
 
     if st.button("Compute Sandbox Inputs"):

@@ -22,18 +22,14 @@ HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
 print("Connecting to Hopsworks Project Registry...")
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 
-# Cloud Feature Store Version 3 Check
 try:
     fs = project.get_feature_store()
-    fg = fs.get_feature_group(name="weather_aqi_fg", version=3)
-    print("Connected to Feature Group Version 3 successfully.")
+    fg = fs.get_feature_group(name="weather_aqi_fg", version=4)
+    print("Connected to Feature Group Version 4 successfully.")
 except Exception as e:
     print("Cloud indexing status pending. Using structural synchronization fallback.")
 
-# ==========================================================
-# GENERATING BULK LAST 3-MONTHS HISTORICAL TRAINING DATASET
-# ==========================================================
-print("\nSynthesizing Upgraded Last 3-Months (90 Days) Historical Weather Dataset...")
+print("\nSynthesizing Unit-Aligned 3-Months Historical Weather Dataset...")
 
 start_date = datetime.now() - timedelta(days=90)
 date_list = [start_date + timedelta(days=x) for x in range(90)]
@@ -43,27 +39,26 @@ np.random.seed(42)
 
 for date in date_list:
     month = date.month
-    # Last 3 months ranges (Late Feb to May/June transition profiles)
     if month in [3, 4]: 
         base_temp = np.random.uniform(22, 32)
         base_humidity = np.random.uniform(35, 60)
-    else: # Hot Summer/May spikes
-        base_temp = np.random.uniform(34, 43)  # Increased heat range for Islamabad heatwaves
-        base_humidity = np.random.uniform(10, 45) # Lower humidity on scorching days
+        wind_kmh = np.random.uniform(8, 22)
+    else: 
+        base_temp = np.random.uniform(34, 43)  
+        base_humidity = np.random.uniform(15, 45) 
+        wind_kmh = np.random.uniform(12, 32) # Simulated real-world high winds for Islamabad dust seasons
         
-    wind_speed = np.random.uniform(1.5, 12) # Captured lower wind speeds (stagnation drops)
     visibility = np.random.uniform(4000, 10000)
+    simulated_max_temp = base_temp + np.random.uniform(2, 6.5)
+    stagnation_index = simulated_max_temp / (wind_kmh + 0.1)
     
-    # Simulating naye columns for history data rows
-    simulated_max_temp = base_temp + np.random.uniform(2, 6)
-    stagnation_index = simulated_max_temp / (wind_speed + 0.1)
-    
-    # Sophisticated target scaling for extreme days
+    # Unit aligned math logic scaling up target benchmarks
     aqi_target = int(
-        (base_humidity * 1.1) - 
-        (visibility / 250) + 
-        (simulated_max_temp * 2.2) + 
-        (stagnation_index * 1.6) + 
+        (base_humidity * 1.2) - 
+        (visibility / 200) + 
+        (simulated_max_temp * 2.5) + 
+        (wind_kmh * 0.8) + 
+        (stagnation_index * 2.0) + 
         np.random.normal(0, 5)
     )
     aqi_target = max(10, min(500, aqi_target))
@@ -72,7 +67,7 @@ for date in date_list:
         "temperature": base_temp,
         "max_temperature": simulated_max_temp,
         "humidity": base_humidity,
-        "wind_speed": wind_speed,
+        "wind_speed": wind_kmh,
         "visibility": visibility,
         "stagnation_index": stagnation_index,
         "aqi_target": aqi_target,
@@ -80,18 +75,16 @@ for date in date_list:
     })
 
 df = pd.DataFrame(historical_rows)
-print(f"Enhanced 3-Months dataset complete: Generated {len(df)} rows.")
+print(f"✅ Dataset generation complete: Generated {len(df)} synced training rows.")
 
-# Selection of all upgraded structural features
 X = df[['temperature', 'max_temperature', 'humidity', 'wind_speed', 'visibility', 'stagnation_index']]
 y = df['aqi_target']
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Applying Sample Weighting Matrix to focus heavily on Heatwave spikes (>95 AQI target lines)
-sample_weights = np.where(y_train > 95, 3.0, 1.0)
+# Strategic sample weights to give outliers and higher curves maximum scaling focus
+sample_weights = np.where(y_train > 95, 3.5, 1.0)
 
-# Non-linear architectures cluster configuration
 models = {
     "Linear_Regression": LinearRegression(),
     "Random_Forest_Weighted": RandomForestRegressor(n_estimators=150, random_state=42),
@@ -105,7 +98,6 @@ lowest_mse = float('inf')
 print("\n--- Concurrently Evaluating Non-Linear Models with Sample Weighting ---")
 for name, model in models.items():
     if name != "Linear_Regression":
-        # Passing sample weights to tree ensembles
         model.fit(X_train, y_train, sample_weight=sample_weights)
     else:
         model.fit(X_train, y_train)
@@ -125,13 +117,15 @@ local_dir = "saved_model"
 os.makedirs(local_dir, exist_ok=True)
 joblib.dump(best_model_obj, f"{local_dir}/model.pkl")
 
-# Registering updated architecture cluster to Registry
+# Meta configuration structure updates
+metadata_desc = f"Algorithm Architecture: {best_model_name} Target Optimized for Islamabad Wind-Dust Scale parameters."
+
 print("\nPushing updated artifact directory to Hopsworks Model Registry...")
 mr = project.get_model_registry()
 hw_model = mr.python.create_model(
     name="aqi_prediction_model",
     metrics={"mse": lowest_mse},
-    description=f"Heatwave-optimized model trained on 3 Months historic variations. Architecture: {best_model_name}"
+    description=metadata_desc
 )
 hw_model.save(local_dir)
 print("Cloud Model Registry Version Sync successfully complete!")
