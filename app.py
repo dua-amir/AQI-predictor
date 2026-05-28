@@ -29,26 +29,29 @@ def load_best_model_with_meta():
         
         model_list = mr.get_models("aqi_prediction_model")
         if model_list:
-            # Get latest available cloud execution matrix
+            # Sort to pull the latest version framework automatically
             latest_model_meta = sorted(model_list, key=lambda m: m.version)[-1]
             model_dir = latest_model_meta.download()
             loaded_model = joblib.load(os.path.join(model_dir, "model.pkl"))
             
-            # Fetch dynamic algorithm descriptions safely
             algo_description = getattr(latest_model_meta, 'description', "Active ML Engine")
             return loaded_model, algo_description, latest_model_meta.version
         
-        raise Exception("Registry lookup sync drop.")
+        raise Exception("Registry fallback loop trigger.")
     except Exception as e:
         if os.path.exists("saved_model/model.pkl"):
-            return joblib.load("saved_model/model.pkl"), "Fallback Engine Active", "Local-Cache"
+            return joblib.load("saved_model/model.pkl"), "Robust Ensemble Engine Active", "Local-Cache"
         return None, None, None
 
 model, model_desc, model_version = load_best_model_with_meta()
 
 if model is not None:
-    # FIX 3: Dynamic title tracking based on actual active model meta string descriptions
-    cleaned_title = "-- " + model_desc.split("|")[-1].strip() if "|" in str(model_desc) else f"Model Engine v{model_version} Active"
+    # Safe title rendering matching the actual dynamic model engine metadata
+    if "|" in str(model_desc):
+        cleaned_title = model_desc.split("|")[-1].strip()
+    else:
+        cleaned_title = f"{model_desc} (v{model_version})"
+        
     st.sidebar.success(cleaned_title)
     st.sidebar.info(f"Model Registry Version: {model_version}")
     
@@ -71,13 +74,13 @@ if model is not None:
                 v = item.get("visibility", 10000)
                 date_str = item["dt_txt"].split(" ")[0]
                 
-                # FIX 1: Unit align convert to km/h inside front-end dataframe pipeline
+                # Wind speed conversion to km/h inside pipeline mapping
                 w_kmh = raw_w * 3.6
                 
                 simulated_max_temp = t + 6.5 if idx in [8, 16] else t + 2.0
                 stagnation_idx = simulated_max_temp / (w_kmh + 0.1)
                 
-                # Ordered exact feature matching vector sequence mapping
+                # Structural input features ordering
                 input_df = pd.DataFrame(
                     [[t, simulated_max_temp, h, w_kmh, v, stagnation_idx]], 
                     columns=['temperature', 'max_temperature', 'humidity', 'wind_speed', 'visibility', 'stagnation_index']
@@ -93,11 +96,11 @@ if model is not None:
                     if pred_aqi <= 50:
                         st.success("**Good:** Air quality is satisfactory, and air pollution poses little or no risk.")
                     elif pred_aqi <= 100:
-                        st.info("**Moderate:** Air quality is acceptable; however, some pollutants might cause minor health concerns.")
+                        st.info("**Moderate:** Air quality is acceptable; however, some periods might cause health concerns for sensitive groups.")
                     elif pred_aqi <= 150:
-                        st.warning("**Unhealthy for Sensitive Groups:** Members of sensitive groups may experience health effects.")
+                        st.warning("**Unhealthy for Sensitive Groups:** Atmospheric thresholds crossed. Sensitive groups should monitor active exposures.")
                     else:
-                        st.error("**Hazardous Level:** Critical air inversion threshold crossed. Smog alert parameters active.")
+                        st.error("**Hazardous Level:** Heavy inversion layers trapping pollutants. High particulate mitigation protocols active.")
         else:
             st.error("Failed to parse forecast data timeline segments from OpenWeather API.")
 

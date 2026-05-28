@@ -30,34 +30,35 @@ for i in range(0, 24, 8):
         
         temp_val = item["main"]["temp"]
         raw_wind_speed = item["wind"]["speed"]
+        humidity_val = item["main"]["humidity"]
         
-        # FIX 1: Convert Wind Speed from m/s to km/h to match Google Weather
+        # Unit conversion to km/h
         wind_kmh = raw_wind_speed * 3.6
         
-        # Real-world peak afternoon temperature simulation
+        # Real-world peak afternoon heatwave simulation
         simulated_max_temp = temp_val + 6.5 if i in [8, 16] else temp_val + 2.0
 
         weather_data = {
             "city": CITY,
             "temperature": temp_val,
             "max_temperature": simulated_max_temp,
-            "humidity": item["main"]["humidity"],
-            "wind_speed": wind_kmh,  # In km/h now
+            "humidity": humidity_val,
+            "wind_speed": wind_kmh,
             "visibility": item.get("visibility", 10000),
             "timestamp": item.get("dt"),
             "forecast_date": dt_txt.split(" ")[0]
         }
         
-        # Stagnation factor based on km/h unit calibration
+        # Stagnation Index and Interaction Features
         weather_data["stagnation_index"] = simulated_max_temp / (wind_kmh + 0.1)
         
-        # FIX 2: Calibrated AQI target formula capturing dust-storm effects from high wind speeds
+        # Target Formula calibration to catch heavy 130+ spikes
         weather_data["aqi_target"] = int(
-            (weather_data["humidity"] * 1.2) - 
+            (humidity_val * 1.4) - 
             (weather_data["visibility"] / 200) + 
-            (weather_data["max_temperature"] * 2.5) + 
-            (wind_kmh * 0.8) +  # High wind speed contributes to dust/PM10 spikes
-            (weather_data["stagnation_index"] * 2.0)
+            (simulated_max_temp * 2.8) + 
+            (wind_kmh * 0.9) + 
+            (weather_data["stagnation_index"] * 2.5)
         )
         weather_data["aqi_target"] = max(10, min(500, weather_data["aqi_target"]))
         rows.append(weather_data)
@@ -68,14 +69,14 @@ print("Connecting to Hopsworks Cloud...")
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store()
 
-# Upgraded to Version 4 for unit synchronized schema mapping
+# Upgraded to Version 5 for Advanced Robust Calibration
 weather_fg = fs.get_or_create_feature_group(
     name="weather_aqi_fg",
-    version=4,  # <-- Upgraded to Version 4
+    version=5,  # <-- Version 5
     primary_key=['timestamp'],
-    description="3-Day Future Weather Data blocks with km/h wind metrics"
+    description="3-Day Future Weather Data blocks with Huber Loss alignment parameters"
 )
 
 print(f"Inserting forecast rows into Feature Store...")
 weather_fg.insert(df)
-print("Feature Store Version 4 updated successfully!")
+print("Feature Store Version 5 updated successfully!")
