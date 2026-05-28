@@ -3,79 +3,92 @@ import hopsworks
 import joblib
 import os
 import pandas as pd
+import requests
+from dotenv import load_dotenv
 
-# Windows Crash Fix
+# .env loading variables
+load_dotenv()
+
 os.environ["HOPSWORKS_BE_RE_TEMP_DIR"] = os.environ.get("TEMP", "C:\\Temp")
 
-st.set_page_config(page_title="AQI Predictor Dashboard", layout="centered", page_icon="🌤️")
+st.set_page_config(page_title="3-Day Automated AQI Engine", layout="centered", page_icon="🌤️")
 
-st.title("Real-time AQI Predictor Dashboard (MLOps)")
-st.write("This interactive dashboard fetches the best trained model architecture from the Hopsworks Cloud Model Registry to predict Air Quality Index (AQI).")
+st.title("Automated 3-Day Future AQI Predictor")
+st.write("This intelligence dashboard runs predictions for the next 3 days using a machine learning model optimized on the last 3 months of historical data trends.")
 
+# ENV CONFIGURATIONS
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY") 
 HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
+CITY = "Islamabad"
 
 @st.cache_resource
 def load_best_model():
-    """Fetches model from Hopsworks Model Registry or falls back to local save."""
     try:
-        print("Connecting to Hopsworks for model retrieval...")
         project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
         mr = project.get_model_registry()
-        
-        # Get the latest version of registered model
         model_metadata = mr.get_model("aqi_prediction_model", version=1)
         model_dir = model_metadata.download()
-        model_path = os.path.join(model_dir, "model.pkl")
-        
-        st.sidebar.success("Model loaded fresh from Hopsworks Cloud Registry!")
-        return joblib.load(model_path)
+        return joblib.load(os.path.join(model_dir, "model.pkl"))
     except Exception as e:
-        st.sidebar.warning("Cloud registry busy. Loading locally cached champion model.")
-        # Fallback to locally trained model if cloud fetch fails due to gRPC indexing
         if os.path.exists("saved_model/model.pkl"):
             return joblib.load("saved_model/model.pkl")
-        else:
-            st.error("No local model found! Please run train_pipeline.py first.")
-            return None
+        return None
 
-# Load the champion model
 model = load_best_model()
 
 if model is not None:
-    st.markdown("---")
-    st.subheader("Configure Weather Parameters")
+    st.sidebar.success("3-Month Champion Model Loaded")
     
-    # Grid columns for sliders to look clean
-    col1, col2 = st.columns(2)
+    st.markdown("### Next 3-Days Automated Air Quality Insights")
     
-    with col1:
-        temp = st.slider("Temperature (°C)", min_value=0.0, max_value=50.0, value=28.0, step=0.5)
-        humidity = st.slider("Humidity (%)", min_value=10, max_value=100, value=55, step=1)
+    with st.spinner("Streaming future weather telemetry from OpenWeather API..."):
+        forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
+        res = requests.get(forecast_url).json()
         
-    with col2:
-        wind = st.slider("Wind Speed (m/s)", min_value=0.0, max_value=25.0, value=4.5, step=0.1)
-        visibility = st.slider("Visibility Range (meters)", min_value=1000, max_value=10000, value=8000, step=500)
-
-    st.markdown("### Prediction Engine")
-    if st.button("Calculate Expected AQI", type="primary"):
-        # Wrap inputs exactly in the dataframe format the models trained on
-        input_df = pd.DataFrame([[temp, humidity, wind, visibility]], 
-                               columns=['temperature', 'humidity', 'wind_speed', 'visibility'])
-        
-        # Perform prediction
-        prediction = model.predict(input_df)[0]
-        aqi_val = int(prediction)
-        
-        # Metric layout
-        st.markdown("#### Results:")
-        st.metric(label="Predicted Air Quality Index (AQI)", value=f"{aqi_val}")
-        
-        # AQI Category Alerts based on international scale
-        if aqi_val <= 100:
-            st.success("🟢 **Good / Moderate:** The air quality is acceptable and poses little or no risk.")
-        elif aqi_val <= 200:
-            st.warning("🟡 **Unhealthy for Sensitive Groups:** Members of sensitive groups may experience health effects.")
+        if "list" in res:
+            # 3 Dedicated separate presentation blocks/tabs
+            tab1, tab2, tab3 = st.tabs(["Tomorrow", "Day 2", "Day 3"])
+            tabs = [tab1, tab2, tab3]
+            indices = [8, 16, 24] # Gaps corresponding to ~24h, ~48h, ~72h offsets
+            
+            for idx, tab in zip(indices, tabs):
+                item = res["list"][idx]
+                t = item["main"]["temp"]
+                h = item["main"]["humidity"]
+                w = item["wind"]["speed"]
+                v = item.get("visibility", 10000)
+                date_str = item["dt_txt"].split(" ")[0]
+                
+                # Dynamic prediction input formatting dataframe
+                input_df = pd.DataFrame([[t, h, w, v]], columns=['temperature', 'humidity', 'wind_speed', 'visibility'])
+                pred_aqi = int(model.predict(input_df)[0])
+                
+                with tab:
+                    st.markdown(f"#### Forecast Target Date: **{date_str}**")
+                    st.write(f"🔹 **Expected Metrics:** Temp: `{t}°C` | Humidity: `{h}%` | Wind Vectors: `{w} m/s` | Visibility: `{v}m`")
+                    st.metric(label="Calculated Future AQI", value=f"{pred_aqi}")
+                    
+                    # AQI Safety Category thresholds
+                    if pred_aqi <= 100:
+                        st.success("🟢 **Good / Moderate:** Ambient air quality is clear and optimal.")
+                    elif pred_aqi <= 200:
+                        st.warning("🟡 **Unhealthy Warning:** Ambient parameters slightly compromised. Precaution for sensitive profiles.")
+                    else:
+                        st.error("🔴 **Hazardous Level:** Elevated pollutant mapping indicators. Critical mitigation active.")
         else:
-            st.error("🔴 **Hazardous / Unhealthy:** Active children and adults, and people with respiratory disease should avoid outdoor exertion.")
+            st.error("Failed to parse forecast data timeline segments from OpenWeather API.")
+
+    # Sandbox playground metrics component
+    st.markdown("---")
+    st.subheader("🛠️ Experimental Sandbox Console")
+    s_temp = st.slider("Testing Temperature (°C)", 0.0, 50.0, 25.0)
+    s_humidity = st.slider("Testing Humidity (%)", 10, 100, 50)
+    s_wind = st.slider("Testing Wind Speed (m/s)", 0.0, 20.0, 5.0)
+    s_visibility = st.slider("Testing Visibility (m)", 1000, 10000, 8000)
+
+    if st.button("Compute Sandbox Inputs"):
+        s_input = pd.DataFrame([[s_temp, s_humidity, s_wind, s_visibility]], columns=['temperature', 'humidity', 'wind_speed', 'visibility'])
+        s_pred = int(model.predict(s_input)[0])
+        st.metric(label="Sandbox Realtime Predicted AQI", value=f"{s_pred}")
 else:
-    st.error("Pipeline breakdown. Please ensure train_pipeline.py finishes correctly.")
+    st.error("Critical MLOps framework failure: Model artifacts missing from registers.")

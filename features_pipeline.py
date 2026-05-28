@@ -3,45 +3,60 @@ import requests
 import pandas as pd
 import hopsworks
 from datetime import datetime
+from dotenv import load_dotenv
 
-# CONFIGURATION
+# .env file load karna
+load_dotenv()
+
+# WINDOWS OS CRASH FIX
+os.environ["HOPSWORKS_BE_RE_TEMP_DIR"] = os.environ.get("TEMP", "C:\\Temp")
+
+# CONFIGURATION FROM ENV
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY") 
 CITY = "Islamabad" 
 HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
 
-# 1. Fetch Data from OpenWeather
-url = f"https://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
+# Forecast API Call (Future offsets le rha hai)
+url = f"https://api.openweathermap.org/data/2.5/forecast?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
 response = requests.get(url).json()
 
-# AQI Predictor ke liye features nikalna
-weather_data = {
-    "city": CITY,
-    "temperature": response["main"]["temp"],
-    "humidity": response["main"]["humidity"],
-    "wind_speed": response["wind"]["speed"],
-    "visibility": response.get("visibility", 10000),
-    "timestamp": int(datetime.now().timestamp())
-}
+forecast_list = response.get("list", [])
+rows = []
 
-# Dummy Target Variable
-weather_data["aqi_target"] = int((weather_data["humidity"] * 1.5) - (weather_data["visibility"] / 200) + 50)
+# Agle 3 din ka forecast separate blocks mein map karna (Every 24 hours interval)
+for i in range(0, 24, 8):  
+    if i < len(forecast_list):
+        item = forecast_list[i]
+        dt_txt = item.get("dt_txt") 
+        
+        weather_data = {
+            "city": CITY,
+            "temperature": item["main"]["temp"],
+            "humidity": item["main"]["humidity"],
+            "wind_speed": item["wind"]["speed"],
+            "visibility": item.get("visibility", 10000),
+            "timestamp": item.get("dt"),
+            "forecast_date": dt_txt.split(" ")[0]
+        }
+        
+        # Simulated target index configuration
+        weather_data["aqi_target"] = int((weather_data["humidity"] * 1.5) - (weather_data["visibility"] / 200) + 50)
+        rows.append(weather_data)
 
-df = pd.DataFrame([weather_data])
+df = pd.DataFrame(rows)
 
-# 2. Connect and Upload to Hopsworks Feature Store
+# Connect to Hopsworks Store
 print("Connecting to Hopsworks Cloud...")
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store()
 
-print("Creating/Fetching Feature Group on Cloud...")
-# Create or Get Feature Group
 weather_fg = fs.get_or_create_feature_group(
     name="weather_aqi_fg",
-    version=1,
+    version=2,
     primary_key=['timestamp'],
-    description="Weather and simulated AQI dataset"
+    description="3-Day Future Weather Data blocks with Date indexing"
 )
 
-print("Inserting data row...")
+print(f"Inserting forecast rows into Feature Store...")
 weather_fg.insert(df)
-print("Data successfully pushed to Hopsworks Feature Store!")
+print("Feature Store updated successfully!")
