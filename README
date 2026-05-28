@@ -1,0 +1,59 @@
+# AQI Predictor
+
+Small project to fetch weather data, generate features and simulate an AQI
+target for experimentation and training. Stores features in Hopsworks
+Feature Store and includes simple pipelines.
+
+## Prerequisites
+- Python 3.8+
+- A virtual environment (recommended)
+- `pip install -r requirements.txt` (create if needed)
+
+## Environment variables / secrets
+Set the following in your environment instead of embedding keys in code:
+
+- `OPENWEATHER_API_KEY` — API key for OpenWeather
+- `HOPSWORKS_API_KEY` — API key for Hopsworks
+
+You can export/set them in PowerShell like:
+
+```powershell
+$env:OPENWEATHER_API_KEY = "your_openweather_key"
+$env:HOPSWORKS_API_KEY = "your_hopsworks_key"
+```
+
+## Files
+- `features_pipeline.py`: fetches weather, synthesizes an AQI target and
+	uploads features to Hopsworks Feature Store. Note: the script sets a
+	workspace-local temp folder to avoid Windows certificate path issues.
+- `train_pipeline.py`: training pipeline (use as entrypoint for model training).
+
+## Run
+
+Run the features pipeline:
+
+```powershell
+python features_pipeline.py
+```
+
+Run training (example):
+
+```powershell
+python train_pipeline.py
+```
+
+If there's a Streamlit app, run:
+
+```powershell
+streamlit run app.py
+```
+
+## Notes
+- The repository currently includes a fix to ensure Hopsworks writes
+	certificate materialization to a Windows-safe directory; see
+	`features_pipeline.py` for the implementation.
+- Avoid committing API keys — use environment variables or a secrets manager.
+
+## Next steps
+- Add a `requirements.txt` listing `hopsworks`, `pandas`, `requests`, etc.
+- Add CI or a simple unit test for the pipelines.
