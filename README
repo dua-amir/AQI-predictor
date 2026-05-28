@@ -7,13 +7,12 @@ Feature Store and includes simple pipelines.
 ## Prerequisites
 - Python 3.8+
 - A virtual environment (recommended)
-- `pip install -r requirements.txt` (create if needed)
 
 ## Environment variables / secrets
 Set the following in your environment instead of embedding keys in code:
 
-- `OPENWEATHER_API_KEY` — API key for OpenWeather
-- `HOPSWORKS_API_KEY` — API key for Hopsworks
+- `OPENWEATHER_API_KEY` API key for OpenWeather
+- `HOPSWORKS_API_KEY` API key for Hopsworks
 
 You can export/set them in PowerShell like:
 
@@ -30,19 +29,19 @@ $env:HOPSWORKS_API_KEY = "your_hopsworks_key"
 
 ## Run
 
-Run the features pipeline:
+- To run the features pipeline:
 
 ```powershell
 python features_pipeline.py
 ```
 
-Run training (example):
+- To run the training pipeline (example):
 
 ```powershell
 python train_pipeline.py
 ```
 
-If there's a Streamlit app, run:
+- To run the Streamlit app (if present):
 
 ```powershell
 streamlit run app.py
@@ -57,3 +56,18 @@ streamlit run app.py
 ## Next steps
 - Add a `requirements.txt` listing `hopsworks`, `pandas`, `requests`, etc.
 - Add CI or a simple unit test for the pipelines.
+
+## Managing dependencies
+
+- Create and activate a virtual environment (PowerShell):
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate
+```
+
+- Install packages inside the activated venv as needed, for example:
+
+```powershell
+pip install -r requirements.txt
+```
