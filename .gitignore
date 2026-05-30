@@ -2,3 +2,6 @@
 venv/
 # Ignore .env file
 .env
+# Ignore pycache directories
+__pycache__/
+*.pyc

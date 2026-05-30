@@ -12,10 +12,10 @@ load_dotenv()
 os.environ["HOPSWORKS_BE_RE_TEMP_DIR"] = os.environ.get("TEMP", "C:\\Temp")
 HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
 
-st.set_page_config(page_title="Pearls AQI Engine", layout="wide", page_icon="")
+st.set_page_config(page_title="Pearls AQI Engine", layout="wide", page_icon="🌤️")
 
 st.title("Pearls AQI Predictor Dashboard")
-st.write("Real-time Serverless Machine Learning forecasting system for atmospheric pollution patterns over the next 3 days.")
+st.write("Real-time Serverless Machine Learning forecasting system for atmospheric pollution patterns over the next 4 days.")
 
 @st.cache_resource
 def download_ml_artifacts():
@@ -56,14 +56,15 @@ if model is not None:
         df_features['datetime'] = pd.to_datetime(df_features['timestamp'], unit='s')
         df_features['date_label'] = df_features['datetime'].dt.strftime('%A, %b %d')
 
-        tab_predictions, tab_explainability = st.tabs(["3-Day Forecast Panels", "Feature Importance Breakdown"])
+        tab_predictions, tab_explainability = st.tabs(["4-Day Forecast Panels", "Feature Importance Breakdown"])
         
         with tab_predictions:
-            st.markdown("### Next 3-Days Automated Air Quality Insights")
+            st.markdown("### Next 4-Days Automated Air Quality Insights")
             
-            unique_days = df_features['day'].unique()[:3]
-            cols_layout = st.columns(3)
-            day_titles = ["Today", "Tomorrow", "Day After Tomorrow"]
+            # Slicing extended to 4 unique days
+            unique_days = df_features['day'].unique()[:4]
+            cols_layout = st.columns(4) # 👈 Expanded layout grid to 4 columns
+            day_titles = ["Today", "Tomorrow", "Day After Tomorrow", "Day After After Tomorrow"] # 👈 Added 4th day heading
             
             for i, target_day in enumerate(unique_days):
                 if i >= len(cols_layout):
@@ -109,7 +110,6 @@ if model is not None:
                 y=alt.Y('Feature:N', sort='-x', title='Predictive Input Parameters')
             ).properties(height=350)
             
-            # Replaced deprecated use_container_width with standard structural string configuration parameter
             st.altair_chart(chart, width="stretch")
 else:
     st.error("Critical Infrastructure Failure: Missing trained analytical registry model parameters.")
