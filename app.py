@@ -29,7 +29,6 @@ def load_best_model_with_meta():
         
         model_list = mr.get_models("aqi_prediction_model")
         if model_list:
-            # Sort to pull the latest version framework automatically
             latest_model_meta = sorted(model_list, key=lambda m: m.version)[-1]
             model_dir = latest_model_meta.download()
             loaded_model = joblib.load(os.path.join(model_dir, "model.pkl"))
@@ -46,7 +45,7 @@ def load_best_model_with_meta():
 model, model_desc, model_version = load_best_model_with_meta()
 
 if model is not None:
-    # Safe title rendering matching the actual dynamic model engine metadata
+    # Safe title rendering matching the active metadata description 
     if "|" in str(model_desc):
         cleaned_title = model_desc.split("|")[-1].strip()
     else:
@@ -74,13 +73,15 @@ if model is not None:
                 v = item.get("visibility", 10000)
                 date_str = item["dt_txt"].split(" ")[0]
                 
-                # Wind speed conversion to km/h inside pipeline mapping
+                # Convert wind speed to km/h
                 w_kmh = raw_w * 3.6
                 
                 simulated_max_temp = t + 6.5 if idx in [8, 16] else t + 2.0
-                stagnation_idx = simulated_max_temp / (w_kmh + 0.1)
                 
-                # Structural input features ordering
+                # Feature Engineering Layer Alignment matching Training setup
+                stagnation_idx = (simulated_max_temp ** 1.2) / (w_kmh + 0.5)
+                
+                # Exact sequential features payload construction
                 input_df = pd.DataFrame(
                     [[t, simulated_max_temp, h, w_kmh, v, stagnation_idx]], 
                     columns=['temperature', 'max_temperature', 'humidity', 'wind_speed', 'visibility', 'stagnation_index']
@@ -106,14 +107,14 @@ if model is not None:
 
     # Sandbox Playground Engine
     st.markdown("---")
-    st.subheader("🛠️ Experimental Sandbox Console")
+    st.subheader("Experimental Sandbox Console")
     s_temp = st.slider("Testing Base Temperature (°C)", 0.0, 50.0, 25.0)
     s_max_temp = st.slider("Testing Peak Max Temperature (°C)", 0.0, 55.0, 32.0)
     s_humidity = st.slider("Testing Humidity (%)", 5, 100, 45)
     s_wind = st.slider("Testing Wind Speed (km/h)", 0.0, 70.0, 15.0)
     s_visibility = st.slider("Testing Visibility (m)", 1000, 10000, 8000)
     
-    s_stagnation = s_max_temp / (s_wind + 0.1)
+    s_stagnation = (s_max_temp ** 1.2) / (s_wind + 0.5)
 
     if st.button("Compute Sandbox Inputs"):
         s_input = pd.DataFrame(

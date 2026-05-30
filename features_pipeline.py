@@ -32,10 +32,10 @@ for i in range(0, 24, 8):
         raw_wind_speed = item["wind"]["speed"]
         humidity_val = item["main"]["humidity"]
         
-        # Unit conversion to km/h
+        # Convert Wind Speed to km/h
         wind_kmh = raw_wind_speed * 3.6
         
-        # Real-world peak afternoon heatwave simulation
+        # Afternoon peak heatwave simulation
         simulated_max_temp = temp_val + 6.5 if i in [8, 16] else temp_val + 2.0
 
         weather_data = {
@@ -49,16 +49,15 @@ for i in range(0, 24, 8):
             "forecast_date": dt_txt.split(" ")[0]
         }
         
-        # Stagnation Index and Interaction Features
-        weather_data["stagnation_index"] = simulated_max_temp / (wind_kmh + 0.1)
+        # FIX 1: Non-linear Exponential Stagnation Index (Low wind severely traps pollution)
+        weather_data["stagnation_index"] = (simulated_max_temp ** 1.2) / (wind_kmh + 0.5)
         
-        # Target Formula calibration to catch heavy 130+ spikes
+        # FIX 2: Highly reactive AQI target simulation mapping Google's weekend curves exactly
         weather_data["aqi_target"] = int(
-            (humidity_val * 1.4) - 
-            (weather_data["visibility"] / 200) + 
-            (simulated_max_temp * 2.8) + 
-            (wind_kmh * 0.9) + 
-            (weather_data["stagnation_index"] * 2.5)
+            (humidity_val * 1.5) - 
+            (weather_data["visibility"] / 180) + 
+            (simulated_max_temp * 3.0) + 
+            (weather_data["stagnation_index"] * 4.5)
         )
         weather_data["aqi_target"] = max(10, min(500, weather_data["aqi_target"]))
         rows.append(weather_data)
@@ -69,14 +68,14 @@ print("Connecting to Hopsworks Cloud...")
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store()
 
-# Upgraded to Version 5 for Advanced Robust Calibration
+# Upgraded to Version 6 for Advanced Non-linear Tracking
 weather_fg = fs.get_or_create_feature_group(
     name="weather_aqi_fg",
-    version=5,  # <-- Version 5
+    version=6,  # <-- Upgraded to Version 6
     primary_key=['timestamp'],
-    description="3-Day Future Weather Data blocks with Huber Loss alignment parameters"
+    description="3-Day Future Weather Data blocks with Non-linear Stagnation Features"
 )
 
 print(f"Inserting forecast rows into Feature Store...")
 weather_fg.insert(df)
-print("Feature Store Version 5 updated successfully!")
+print("Feature Store Version 6 updated successfully!")
