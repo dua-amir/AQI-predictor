@@ -1,0 +1,36 @@
+name: Pearls AQI Automated Orchestration Pipeline
+
+on:
+  schedule:
+    - cron: '0 * * * *'      # Ingests new features every single hour
+    - cron: '0 0 * * *'      # Retrains and submits model update snapshots daily
+  workflow_dispatch:          # Allows manual push triggers directly inside Github UI
+
+jobs:
+  run-pipelines:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository Codebase
+        uses: actions/checkout@v3
+
+      - name: Initialize Python Runtime Environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install System Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Execute Live Ingestion Stream (Hourly)
+        env:
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+        run: python features_pipeline.py
+
+      - name: Execute Model Maintenance Retraining Suite (Daily)
+        if: github.event.schedule == '0 0 * * *' || github.event_readable == 'workflow_dispatch'
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+        run: python train_pipeline.py
