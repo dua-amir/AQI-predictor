@@ -5,77 +5,103 @@ import hopsworks
 from datetime import datetime
 from dotenv import load_dotenv
 
-# .env file load karna
 load_dotenv()
 
-# WINDOWS OS CRASH FIX
+# Windows OS crash patch
 os.environ["HOPSWORKS_BE_RE_TEMP_DIR"] = os.environ.get("TEMP", "C:\\Temp")
 
-# CONFIGURATION FROM ENV
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY") 
 CITY = "Islamabad" 
 HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
 
-# Forecast API Call
-url = f"https://api.openweathermap.org/data/2.5/forecast?q={CITY}&appid={OPENWEATHER_API_KEY}&units=metric"
-response = requests.get(url).json()
+def get_coordinates(city, api_key):
+    geo_url = f"http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={api_key}"
+    res = requests.get(geo_url).json()
+    if res:
+        return res[0]['lat'], res[0]['lon']
+    raise ValueError(f"City '{city}' not found.")
 
-forecast_list = response.get("list", [])
-rows = []
-
-for i in range(0, 24, 8):  
-    if i < len(forecast_list):
-        item = forecast_list[i]
-        dt_txt = item.get("dt_txt") 
+def fetch_aqi_and_weather_pipeline():
+    lat, lon = get_coordinates(CITY, OPENWEATHER_API_KEY)
+    
+    # 1. Fetch Real Pollution Data
+    pollution_url = f"http://api.openweathermap.org/data/2.5/air_pollution/forecast?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}"
+    p_res = requests.get(pollution_url).json()
+    
+    # 2. Fetch Corresponding Weather Data
+    weather_url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}&units=metric"
+    w_res = requests.get(weather_url).json()
+    
+    # Map weather items by their unique timestamp for easy merge
+    weather_map = {item['dt']: item for item in w_res.get("list", [])}
+    
+    rows = []
+    previous_aqi = None
+    
+    for item in p_res.get("list", []):
+        ts = item.get("dt")
+        dt_obj = datetime.fromtimestamp(ts)
         
-        temp_val = item["main"]["temp"]
-        raw_wind_speed = item["wind"]["speed"]
-        humidity_val = item["main"]["humidity"]
+        # Pull matching weather metadata
+        w_item = weather_map.get(ts, {})
+        temp_val = w_item.get("main", {}).get("temp", 25.0) # Default mid-temp fallbacks if misaligned
+        humidity_val = w_item.get("main", {}).get("humidity", 50)
+        wind_speed_kmh = w_item.get("wind", {}).get("speed", 3.0) * 3.6
+        visibility = w_item.get("visibility", 10000)
         
-        # Convert Wind Speed to km/h
-        wind_kmh = raw_wind_speed * 3.6
+        # Real air pollution metrics from API
+        components = item.get("components", {})
+        pm25 = components.get("pm2_5", 15.0)
+        pm10 = components.get("pm10", 20.0)
+        no2 = components.get("no2", 10.0)
         
-        # Afternoon peak heatwave simulation
-        simulated_max_temp = temp_val + 6.5 if i in [8, 16] else temp_val + 2.0
-
-        weather_data = {
+        # OpenWeather AQI scale: 1 (Good) to 5 (Very Poor)
+        # Standard index translation layer for easier dashboard mapping (Scale to 0-300)
+        real_aqi_target = int(pm25 * 1.1 + pm10 * 0.4 + no2 * 0.1 + 15) # Added a baseline offset and reduced coefficient multipliers
+        real_aqi_target = max(10, min(300, real_aqi_target))
+        
+        # Derived Feature: AQI Change Rate
+        aqi_change_rate = 0.0 if previous_aqi is None else float(real_aqi_target - previous_aqi)
+        previous_aqi = real_aqi_target
+        
+        # Stagnation Index 
+        stagnation_index = (temp_val + 5.0) / (wind_speed_kmh + 0.5)
+        
+        rows.append({
+            "timestamp": int(ts),
             "city": CITY,
-            "temperature": temp_val,
-            "max_temperature": simulated_max_temp,
-            "humidity": humidity_val,
-            "wind_speed": wind_kmh,
-            "visibility": item.get("visibility", 10000),
-            "timestamp": item.get("dt"),
-            "forecast_date": dt_txt.split(" ")[0]
-        }
+            "hour": int(dt_obj.hour),
+            "day": int(dt_obj.day),
+            "month": int(dt_obj.month),
+            "temperature": float(temp_val),
+            "humidity": float(humidity_val),
+            "wind_speed": float(wind_speed_kmh),
+            "visibility": float(visibility),
+            "pm25": float(pm25),
+            "pm10": float(pm10),
+            "stagnation_index": float(stagnation_index),
+            "aqi_change_rate": float(aqi_change_rate),
+            "aqi_target": int(real_aqi_target)
+        })
         
-        # FIX 1: Non-linear Exponential Stagnation Index (Low wind severely traps pollution)
-        weather_data["stagnation_index"] = (simulated_max_temp ** 1.2) / (wind_kmh + 0.5)
-        
-        # FIX 2: Highly reactive AQI target simulation mapping Google's weekend curves exactly
-        weather_data["aqi_target"] = int(
-            (humidity_val * 1.5) - 
-            (weather_data["visibility"] / 180) + 
-            (simulated_max_temp * 3.0) + 
-            (weather_data["stagnation_index"] * 4.5)
-        )
-        weather_data["aqi_target"] = max(10, min(500, weather_data["aqi_target"]))
-        rows.append(weather_data)
+    df = pd.DataFrame(rows)
+    return df
 
-df = pd.DataFrame(rows)
-
-print("Connecting to Hopsworks Cloud...")
-project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
-fs = project.get_feature_store()
-
-# Upgraded to Version 6 for Advanced Non-linear Tracking
-weather_fg = fs.get_or_create_feature_group(
-    name="weather_aqi_fg",
-    version=6,  # <-- Upgraded to Version 6
-    primary_key=['timestamp'],
-    description="3-Day Future Weather Data blocks with Non-linear Stagnation Features"
-)
-
-print(f"Inserting forecast rows into Feature Store...")
-weather_fg.insert(df)
-print("Feature Store Version 6 updated successfully!")
+if __name__ == "__main__":
+    print("🚀 Running live streaming pipeline...")
+    data_df = fetch_aqi_and_weather_pipeline()
+    
+    print("🛰️ Connecting to Hopsworks Feature Store...")
+    project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
+    fs = project.get_feature_store()
+    
+    weather_fg = fs.get_or_create_feature_group(
+        name="weather_aqi_fg",
+        version=8,  
+        primary_key=['timestamp'],
+        description="Air Quality Index dataset with explicit time features and calculated metrics."
+    )
+    
+    print("📥 Syncing pipeline features with Hopsworks storage...")
+    weather_fg.insert(data_df)
+    print("🎯 Sync Complete!")

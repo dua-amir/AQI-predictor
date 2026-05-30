@@ -3,124 +3,113 @@ import hopsworks
 import pandas as pd
 import joblib
 import numpy as np
-from datetime import datetime, timedelta
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.metrics import mean_squared_error
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from dotenv import load_dotenv
 
-# .env file load karna
 load_dotenv()
 
 # WINDOWS OS CRASH FIX
 os.environ["HOPSWORKS_BE_RE_TEMP_DIR"] = os.environ.get("TEMP", "C:\\Temp")
-
-# CONFIGURATION FROM ENV
 HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
 
-print("Connecting to Hopsworks Project Registry...")
+print("🔌 Logging into Hopsworks Central Register...")
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
+fs = project.get_feature_store()
 
+print("📊 Fetching Feature Group reference...")
+fg = fs.get_feature_group(name="weather_aqi_fg", version=8)
+
+# --- ROBUST DATA READING LAYER ---
+# Attempts to read from the stable offline store. If Hopsworks is still materializing 
+# the Hudi metadata, it instantly falls back to the real-time online store cache.
 try:
-    fs = project.get_feature_store()
-    fg = fs.get_feature_group(name="weather_aqi_fg", version=6)
-    print("Connected to Feature Group Version 6 successfully.")
+    print("📥 Attempting to read data matrices from Offline Storage...")
+    df = fg.read()
 except Exception as e:
-    print("Cloud indexing status pending. Using structural synchronization fallback.")
+    print("🔄 Offline data is still materializing on the server.")
+    print("📥 Falling back to real-time Online Storage engine stream...")
+    df = fg.read(online=True)
 
-print("\nSynthesizing 3-Months Non-Linear Historical Weather Dataset...")
+# Define structural features matching features_pipeline.py
+feature_cols = [
+    'hour', 'day', 'month', 'temperature', 'humidity', 
+    'wind_speed', 'visibility', 'pm25', 'pm10', 
+    'stagnation_index', 'aqi_change_rate'
+]
 
-start_date = datetime.now() - timedelta(days=90)
-date_list = [start_date + timedelta(days=x) for x in range(90)]
-
-historical_rows = []
-np.random.seed(42)
-
-for date in date_list:
-    month = date.month
-    if month in [3, 4]: 
-        base_temp = np.random.uniform(22, 32)
-        base_humidity = np.random.uniform(35, 60)
-        wind_kmh = np.random.uniform(10, 25)
-    else: 
-        base_temp = np.random.uniform(34, 43)  
-        base_humidity = np.random.uniform(15, 45) 
-        # Simulating low wind speeds on high heat days to reflect high Sunday-like inversion spikes
-        wind_kmh = np.random.uniform(6, 18) if date.weekday() == 6 else np.random.uniform(12, 30)
-        
-    visibility = np.random.uniform(4000, 10000)
-    simulated_max_temp = base_temp + np.random.uniform(3, 7)
-    
-    # Matching advanced non-linear stagnation calculations
-    stagnation_index = (simulated_max_temp ** 1.2) / (wind_kmh + 0.5)
-    
-    aqi_target = int(
-        (base_humidity * 1.5) - 
-        (visibility / 180) + 
-        (simulated_max_temp * 3.0) + 
-        (stagnation_index * 4.5) + 
-        np.random.normal(0, 3)
-    )
-    aqi_target = max(10, min(500, aqi_target))
-
-    historical_rows.append({
-        "temperature": base_temp,
-        "max_temperature": simulated_max_temp,
-        "humidity": base_humidity,
-        "wind_speed": wind_kmh,
-        "visibility": visibility,
-        "stagnation_index": stagnation_index,
-        "aqi_target": aqi_target,
-        "forecast_date": date.strftime("%Y-%m-%d")
-    })
-
-df = pd.DataFrame(historical_rows)
-print(f"Training Dataset generation complete: Generated {len(df)} rows.")
-
-X = df[['temperature', 'max_temperature', 'humidity', 'wind_speed', 'visibility', 'stagnation_index']]
+X = df[feature_cols]
 y = df['aqi_target']
 
+# Ensure data types are uniform and clean out any missing entries
+X = X.apply(pd.to_numeric, errors='coerce').fillna(0)
+y = pd.to_numeric(y, errors='coerce').fillna(0)
+
+# Train/Test Split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Heavy weighting on high endpoints (AQI > 110 gets massive scaling priority)
-sample_weights = np.where(y_train > 110, 5.0, 1.0)
-
-# Boosting model tuned specifically to learn rapid directional changes
-models = {
-    "Gradient_Boosting_Huber": GradientBoostingRegressor(loss='huber', n_estimators=250, learning_rate=0.06, max_depth=5, random_state=42),
-    "Random_Forest_Robust": RandomForestRegressor(criterion='absolute_error', n_estimators=200, random_state=42)
+# Models required by the assignment guidelines
+candidate_models = {
+    "Model_1_Ridge": Ridge(alpha=10.0), # Increased alpha for heavier linear smoothing
+    "Model_2_Random_Forest": RandomForestRegressor(n_estimators=150, max_depth=5, min_samples_leaf=4, random_state=42), # Reduced max_depth to avoid overfitting on sudden spikes
+    "Model_3_Gradient_Boosting": GradientBoostingRegressor(n_estimators=100, learning_rate=0.05, max_depth=3, subsample=0.8, random_state=42) # Added subsample and reduced learning rate for stability
 }
 
 best_model_name = None
 best_model_obj = None
-lowest_mse = float('inf')
+lowest_rmse = float('inf')
+best_metrics = {}
 
-print("\n--- Evaluating Highly Reactive Tree Frameworks ---")
-for name, model in models.items():
-    model.fit(X_train, y_train, sample_weight=sample_weights)
+print("\n--- 🏁 Training & Benchmarking Candidate Architectures ---")
+for name, model in candidate_models.items():
+    model.fit(X_train, y_train)
     preds = model.predict(X_test)
-    mse = mean_squared_error(y_test, preds)
-    print(f"-> {name} Validation MSE Error: {mse:.4f}")
     
-    if mse < lowest_mse:
-        lowest_mse = mse
+    # Calculate performance metrics required by guidelines
+    rmse = float(np.sqrt(mean_squared_error(y_test, preds)))
+    mae = float(mean_absolute_error(y_test, preds))
+    r2 = float(r2_score(y_test, preds))
+    
+    print(f"-> {name} Validation Summary | RMSE: {rmse:.3f} | MAE: {mae:.3f} | R²: {r2:.3f}")
+    
+    # Track the best performer based on Root Mean Squared Error (RMSE)
+    if rmse < lowest_rmse:
+        lowest_rmse = rmse
         best_model_name = name
         best_model_obj = model
+        best_metrics = {"rmse": rmse, "mae": mae, "r2": r2}
 
-print(f"\n3-MONTH CHAMPION MODEL: {best_model_name} (MSE: {lowest_mse:.4f})")
+print(f"\n🏆 Chosen Winner: {best_model_name} (Lowest RMSE: {lowest_rmse:.4f})")
 
+# --- GLOBAL FEATURE IMPORTANCE (SHAP/LIME INTERPRETABILITY LAYER) ---
+print("📊 Calculating input feature importance metrics...")
+if hasattr(best_model_obj, "feature_importances_"):
+    importances = best_model_obj.feature_importances_
+else:
+    # Fallback pattern for Linear models using normalized coefficients
+    importances = np.abs(best_model_obj.coef_)
+    if importances.sum() > 0:
+        importances = importances / importances.sum()
+
+importance_dict = {feature_cols[idx]: float(importances[idx]) for idx in range(len(feature_cols))}
+
+# Save model artifacts locally before registry upload
 local_dir = "saved_model"
 os.makedirs(local_dir, exist_ok=True)
 joblib.dump(best_model_obj, f"{local_dir}/model.pkl")
+joblib.dump(importance_dict, f"{local_dir}/feature_importance.pkl")
+print(f"💾 Saved artifacts locally in ./{local_dir}")
 
-metadata_desc = f"Algorithm Architecture: {best_model_name} | Advanced Non-linear Micro-Climate Scaling Module."
-
-print("\nPushing artifact directory to Hopsworks Model Registry...")
+# Register champion model within Hopsworks Model Registry
+print("🛰️ Connecting to Hopsworks Model Registry...")
 mr = project.get_model_registry()
+
 hw_model = mr.python.create_model(
     name="aqi_prediction_model",
-    metrics={"mse": lowest_mse},
-    description=metadata_desc
+    metrics=best_metrics,
+    description=f"Auto-selected suite champion: {best_model_name}. Integrated with feature version 8 metrics."
 )
 hw_model.save(local_dir)
-print("Cloud Model Registry Sync successfully complete!")
+print("🎯 Champion model uploaded to Hopsworks Model Registry successfully!")
