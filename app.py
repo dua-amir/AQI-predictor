@@ -49,11 +49,10 @@ if model is not None:
             df_features = pd.DataFrame()
 
     if not df_features.empty:
-        # Generate model predictions for the entire dataset ahead of time
-        input_features = ['hour', 'day', 'month', 'temperature', 'humidity', 'wind_speed', 'visibility', 'pm25', 'pm10', 'stagnation_index', 'aqi_change_rate']
+        # Align with features used during the training setup
+        input_features = ['hour', 'day', 'month', 'temperature', 'humidity', 'wind_speed', 'visibility', 'stagnation_index', 'aqi_change_rate']
         df_features['predicted_aqi'] = model.predict(df_features[input_features]).astype(int)
         
-        # Convert timestamp array to readable datetime datatypes
         df_features['datetime'] = pd.to_datetime(df_features['timestamp'], unit='s')
         df_features['date_label'] = df_features['datetime'].dt.strftime('%A, %b %d')
 
@@ -62,21 +61,15 @@ if model is not None:
         with tab_predictions:
             st.markdown("### Next 3-Days Automated Air Quality Insights")
             
-            # --- FIXED DYNAMIC DAILY GROUPING LAYER ---
-            # Group rows by distinct calendar days and pull the worst-case peak AQI sequence
             unique_days = df_features['day'].unique()[:3]
             cols_layout = st.columns(3)
-            
             day_titles = ["📅 Today", "📅 Tomorrow", "📅 Day After Tomorrow"]
             
             for i, target_day in enumerate(unique_days):
                 if i >= len(cols_layout):
                     break
                 
-                # Filter down to the specific calendar day block
                 day_subset = df_features[df_features['day'] == target_day]
-                
-                # Extract row with the highest calculated pollution risk for that day
                 peak_row = day_subset.loc[day_subset['predicted_aqi'].idxmax()]
                 pred_val = int(peak_row['predicted_aqi'])
                 readable_date = peak_row['date_label']
@@ -84,7 +77,7 @@ if model is not None:
                 with cols_layout[i]:
                     st.metric(label=f"{day_titles[i]} ({readable_date})", value=f"AQI {pred_val}")
                     st.write(f"🌡️ **Temp:** {peak_row['temperature']:.1f}°C | 💧 **Humidity:** {peak_row['humidity']:.0f}%")
-                    st.write(f"💨 **Wind:** {peak_row['wind_speed']:.1f} km/h | 🌫️ **PM2.5:** {peak_row['pm25']:.1f}")
+                    st.write(f"💨 **Wind:** {peak_row['wind_speed']:.1f} km/h")
                     
                     if pred_val <= 50:
                         st.success("🟢 **Good**\nMinimal health impacts.")
@@ -95,7 +88,6 @@ if model is not None:
                     else:
                         st.error("🚨 **HAZARDOUS ATMOSPHERE ALERT**\nHigh levels of air pollution inversion detected.")
 
-            # Forecast trend line chart
             st.markdown("### Forecast Trend Overview (Continuous Timeline)")
             trend_df = pd.DataFrame({
                 'Timeline': df_features['datetime'],
@@ -117,6 +109,7 @@ if model is not None:
                 y=alt.Y('Feature:N', sort='-x', title='Predictive Input Parameters')
             ).properties(height=350)
             
-            st.altair_chart(chart, use_container_width=True)
+            # Replaced deprecated use_container_width with standard structural string configuration parameter
+            st.altair_chart(chart, width="stretch")
 else:
     st.error("❌ Critical Infrastructure Failure: Missing trained analytical registry model parameters.")
