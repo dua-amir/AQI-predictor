@@ -2,9 +2,9 @@ name: Pearls AQI Automated Orchestration Pipeline
 
 on:
   schedule:
-    - cron: '0 * * * *'      # Ingests new features every single hour
-    - cron: '0 0 * * *'      # Retrains and submits model update snapshots daily
-  workflow_dispatch:          # Allows manual push triggers directly inside Github UI
+    - cron: '0 * * * *'      # Ingests new features every single hour automatically
+    - cron: '0 0 * * *'      # Retrains and submits model update snapshots daily automatically
+  workflow_dispatch:          # Allows manual push triggers directly inside Github UI (For Testing)
 
 jobs:
   run-pipelines:
@@ -29,8 +29,8 @@ jobs:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
         run: python features_pipeline.py
 
-      - name: Execute Model Maintenance Retraining Suite (Daily)
-        if: github.event.schedule == '0 0 * * *' || github.event_readable == 'workflow_dispatch'
+      - name: Execute Model Maintenance Retraining Suite (Daily or Manual)
+        if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
         env:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
         run: python train_pipeline.py
