@@ -9,7 +9,7 @@ load_dotenv()
 HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
 CITY = "Islamabad"
 
-print("⏳ Simulating Historical Backfill Data Generation Pipeline...")
+print("Simulating Historical Backfill Data Generation Pipeline...")
 end_date = datetime.now()
 start_date = end_date - timedelta(days=30)
 current_date = start_date
@@ -51,7 +51,7 @@ while current_date <= end_date:
 
 backfill_df = pd.DataFrame(backfill_rows)
 
-print("🛰️ Connecting to Hopsworks Store to upload backfill rows...")
+print("Connecting to Hopsworks Store to upload backfill rows...")
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store()
 
@@ -63,4 +63,4 @@ weather_fg = fs.get_or_create_feature_group(
     online_enabled=True
 )
 weather_fg.insert(backfill_df)
-print(f"🎯 Successfully backfilled {len(backfill_df)} records into Feature Store!")
+print(f"Successfully backfilled {len(backfill_df)} records into Feature Store!")

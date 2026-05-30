@@ -17,14 +17,14 @@ print("🔌 Logging into Hopsworks Central Register...")
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store()
 
-print("📊 Fetching Feature Group reference...")
+print("Fetching Feature Group reference...")
 fg = fs.get_feature_group(name="weather_aqi_fg", version=9)
 
 try:
-    print("📥 Attempting to read data matrices from Offline Storage...")
+    print("Attempting to read data matrices from Offline Storage...")
     df = fg.read()
 except Exception as e:
-    print("📥 Falling back to real-time Online Storage engine stream...")
+    print("Falling back to real-time Online Storage engine stream...")
     df = fg.read(online=True)
 
 # Explicitly excluded overlapping pm25/pm10 factors to prevent systemic data leaks
@@ -49,7 +49,7 @@ best_model_obj = None
 lowest_rmse = float('inf')
 best_metrics = {}
 
-print("\n--- 🏁 Training & Benchmarking Candidate Architectures ---")
+print("\n--- Training & Benchmarking Candidate Architectures ---")
 for name, model in candidate_models.items():
     model.fit(X_train, y_train)
     preds = model.predict(X_test)
@@ -66,7 +66,7 @@ for name, model in candidate_models.items():
         best_model_obj = model
         best_metrics = {"rmse": rmse, "mae": mae, "r2": r2}
 
-print(f"\n🏆 Chosen Winner: {best_model_name} (RMSE: {lowest_rmse:.4f})")
+print(f"\nChosen Winner: {best_model_name} (RMSE: {lowest_rmse:.4f})")
 
 # Feature Importance Calculations
 if hasattr(best_model_obj, "feature_importances_"):
@@ -83,7 +83,7 @@ os.makedirs(local_dir, exist_ok=True)
 joblib.dump(best_model_obj, f"{local_dir}/model.pkl")
 joblib.dump(importance_dict, f"{local_dir}/feature_importance.pkl")
 
-print("🛰️ Connecting to Hopsworks Model Registry...")
+print("Connecting to Hopsworks Model Registry...")
 mr = project.get_model_registry()
 hw_model = mr.python.create_model(
     name="aqi_prediction_model",
@@ -91,4 +91,4 @@ hw_model = mr.python.create_model(
     description=f"Clean pipeline suite champion: {best_model_name} optimized without target leak parameters."
 )
 hw_model.save(local_dir)
-print("🎯 Champion model uploaded successfully!")
+print("Champion model uploaded successfully!")

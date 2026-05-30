@@ -80,7 +80,7 @@ def fetch_aqi_and_weather_pipeline():
     return df
 
 if __name__ == "__main__":
-    print("🚀 Running live streaming feature engineering pipeline...")
+    print("Running live streaming feature engineering pipeline...")
     data_df = fetch_aqi_and_weather_pipeline()
     
     print("🛰️ Connecting to Hopsworks Feature Store...")
@@ -95,6 +95,6 @@ if __name__ == "__main__":
         online_enabled=True
     )
     
-    print("📥 Syncing pipeline features with Hopsworks storage...")
+    print("Syncing pipeline features with Hopsworks storage...")
     weather_fg.insert(data_df)
-    print("🎯 Sync Complete!")
+    print("Sync Complete!")

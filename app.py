@@ -12,9 +12,9 @@ load_dotenv()
 os.environ["HOPSWORKS_BE_RE_TEMP_DIR"] = os.environ.get("TEMP", "C:\\Temp")
 HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
 
-st.set_page_config(page_title="Pearls AQI Engine", layout="wide", page_icon="🌤️")
+st.set_page_config(page_title="Pearls AQI Engine", layout="wide", page_icon="")
 
-st.title("🌤️ Pearls AQI Predictor Dashboard")
+st.title("Pearls AQI Predictor Dashboard")
 st.write("Real-time Serverless Machine Learning forecasting system for atmospheric pollution patterns over the next 3 days.")
 
 @st.cache_resource
@@ -31,7 +31,7 @@ def download_ml_artifacts():
             feat_imp = joblib.load(os.path.join(model_dir, "feature_importance.pkl"))
             return loaded_model, feat_imp, latest_model.version
     except Exception as e:
-        st.warning("⚠️ Registry unavailable. Attempting to fall back to local disk cache.")
+        st.warning("Registry unavailable. Attempting to fall back to local disk cache.")
         if os.path.exists("saved_model/model.pkl"):
             return joblib.load("saved_model/model.pkl"), joblib.load("saved_model/feature_importance.pkl"), "Local Cache"
     return None, None, None
@@ -39,7 +39,7 @@ def download_ml_artifacts():
 model, feature_importance, model_version = download_ml_artifacts()
 
 if model is not None:
-    st.sidebar.success(f"🤖 Active Engine Version: {model_version}")
+    st.sidebar.success(f"Active Engine Version: {model_version}")
     
     with st.spinner("Streaming data matrices..."):
         try:
@@ -56,14 +56,14 @@ if model is not None:
         df_features['datetime'] = pd.to_datetime(df_features['timestamp'], unit='s')
         df_features['date_label'] = df_features['datetime'].dt.strftime('%A, %b %d')
 
-        tab_predictions, tab_explainability = st.tabs(["🔮 3-Day Forecast Panels", "📊 Feature Importance Breakdown"])
+        tab_predictions, tab_explainability = st.tabs(["3-Day Forecast Panels", "Feature Importance Breakdown"])
         
         with tab_predictions:
             st.markdown("### Next 3-Days Automated Air Quality Insights")
             
             unique_days = df_features['day'].unique()[:3]
             cols_layout = st.columns(3)
-            day_titles = ["📅 Today", "📅 Tomorrow", "📅 Day After Tomorrow"]
+            day_titles = ["Today", "Tomorrow", "Day After Tomorrow"]
             
             for i, target_day in enumerate(unique_days):
                 if i >= len(cols_layout):
@@ -76,17 +76,17 @@ if model is not None:
                 
                 with cols_layout[i]:
                     st.metric(label=f"{day_titles[i]} ({readable_date})", value=f"AQI {pred_val}")
-                    st.write(f"🌡️ **Temp:** {peak_row['temperature']:.1f}°C | 💧 **Humidity:** {peak_row['humidity']:.0f}%")
-                    st.write(f"💨 **Wind:** {peak_row['wind_speed']:.1f} km/h")
+                    st.write(f"**Temp:** {peak_row['temperature']:.1f}°C | **Humidity:** {peak_row['humidity']:.0f}%")
+                    st.write(f"**Wind:** {peak_row['wind_speed']:.1f} km/h")
                     
                     if pred_val <= 50:
-                        st.success("🟢 **Good**\nMinimal health impacts.")
+                        st.success("**Good**\nMinimal health impacts.")
                     elif pred_val <= 100:
-                        st.info("🟡 **Moderate**\nAcceptable parameters.")
+                        st.info("**Moderate**\nAcceptable parameters.")
                     elif pred_val <= 150:
-                        st.warning("🟠 **Unhealthy for Sensitive Groups**\nWear a mask if sensitive.")
+                        st.warning("**Unhealthy for Sensitive Groups**\nWear a mask if sensitive.")
                     else:
-                        st.error("🚨 **HAZARDOUS ATMOSPHERE ALERT**\nHigh levels of air pollution inversion detected.")
+                        st.error("**HAZARDOUS ATMOSPHERE ALERT**\nHigh levels of air pollution inversion detected.")
 
             st.markdown("### Forecast Trend Overview (Continuous Timeline)")
             trend_df = pd.DataFrame({
@@ -112,4 +112,4 @@ if model is not None:
             # Replaced deprecated use_container_width with standard structural string configuration parameter
             st.altair_chart(chart, width="stretch")
 else:
-    st.error("❌ Critical Infrastructure Failure: Missing trained analytical registry model parameters.")
+    st.error("Critical Infrastructure Failure: Missing trained analytical registry model parameters.")
